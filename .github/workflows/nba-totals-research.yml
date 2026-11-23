@@ -1,0 +1,63 @@
+name: NBA totals research
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "First date to collect (YYYY-MM-DD)"
+        required: true
+        default: "2023-10-01"
+        type: string
+      end_date:
+        description: "Last date to collect (YYYY-MM-DD)"
+        required: true
+        default: "2024-06-30"
+        type: string
+      min_odds:
+        description: "Minimum decimal odds for backtest band"
+        required: true
+        default: "1.45"
+        type: string
+      max_odds:
+        description: "Maximum decimal odds for backtest band"
+        required: true
+        default: "1.49"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  collect-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate scripts
+        run: |
+          python -m unittest discover -s nba/tests -v
+      - name: Collect Action Network NBA totals and prices
+        run: |
+          python nba/src/fetch_actionnetwork.py \
+            --start "${{ inputs.start_date }}" \
+            --end "${{ inputs.end_date }}" \
+            --out nba/output
+      - name: Run price-band backtest
+        run: |
+          python nba/src/backtest_totals.py \
+            --input nba/output/actionnetwork_totals.csv \
+            --min-odds "${{ inputs.min_odds }}" \
+            --max-odds "${{ inputs.max_odds }}" \
+            --out nba/output/backtest.json
+      - name: Upload raw data and reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: nba-totals-research-${{ inputs.start_date }}-to-${{ inputs.end_date }}
+          path: nba/output/
+          if-no-files-found: error
+          retention-days: 30
